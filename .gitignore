@@ -5,3 +5,6 @@
 .env
 .vscode
 __pycache__
+cache
+data
+credentials.yml
