@@ -1,6 +1,6 @@
 import sys
 import logging
-from . import apogeegaia
+from . import crossmatch
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
@@ -13,4 +13,4 @@ def startup():
     aws.remote_console()
 
 def run():
-    raw = apogeegaia.load()
+    raw = crossmatch.load()
