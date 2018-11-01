@@ -1,4 +1,5 @@
 import boto3
+import botocore
 import json
 from io import BytesIO
 
@@ -27,13 +28,24 @@ class Path(object):
         self._bucket = s3().Bucket(bucket)
         self._bucket.create()
 
-        self._key = key
+        self._object = self._bucket.Object(key)
     
     def write_bytes(self, data):
-        self._bucket.upload_fileobj(BytesIO(data), self._key)
+        self._object.upload_fileobj(BytesIO(data))
     
     def read_bytes(self):
         data = BytesIO()
-        self._bucket.download_fileobj(self._key, data)
+        self._object.download_fileobj(data)
         data.seek(0)
         return data.read()
+
+    def exists(self):
+        try:
+            self._object.content_length
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "404":
+                return False
+            else:
+                raise
+        else:
+            return True
