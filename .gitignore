@@ -7,4 +7,5 @@
 __pycache__
 cache
 data
-credentials.yml
+config.json
+credentials.json
