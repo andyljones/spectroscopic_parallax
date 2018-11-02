@@ -18,13 +18,12 @@ log = logging.getLogger(__name__)
 
 PATH = 'alj.data/parallax/apogee_gaia.fits'
 
-def _load_gaia():
+def _load_gaia(apogee):
     """This was all crap; didn't realise there were official matchings
     GAIA-WISE match comes from the official GAIA release: https://gea.esac.esa.int/archive/
     GAIA-APOGEE match is derived from GAIA-2MASS match, as 2MASS was used to guide APOGEE target selection.
     So: load APOGEE data, cross-match to GAIA on the 2MASS ID (REDUCTION_ID column, with the 2M stripped), cross-match to WISE on the WISE ID
     """
-    apogee = gaia_tools.load.apogee()
 
     tmass_ids = (pd.Series(apogee.APOGEE_ID)
         .apply(bytes.decode)
@@ -61,7 +60,9 @@ def _load_gaia():
             return job.get_results()
 
 def _load():
-    gaia = _load_gaia()
+    apogee = gaia_tools.load.apogee()
+    gaia = _load_gaia(apogee)
+
 
 def load():
     path = s3.Path(PATH)
