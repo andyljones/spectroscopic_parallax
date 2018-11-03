@@ -2,6 +2,7 @@ import boto3
 import botocore
 import json
 from io import BytesIO
+from contextlib import contextmanager
 
 __all__ = ('Path',)
 
@@ -9,15 +10,25 @@ def config(key):
     config = {**json.load(open('config.json')), **json.load(open('credentials.json'))}
     return config[key]
 
-_s3 = None
-def s3(): 
-    global _s3
-    if _s3 is None:
-        _s3 = boto3.resource('s3', region_name=config('REGION'), 
+_resource = None
+def resource(): 
+    global _resource
+    if _resource is None:
+        _resource = boto3.resource('s3', region_name=config('REGION'), 
                               aws_access_key_id=config('AWS_ID'), 
                               aws_secret_access_key=config('AWS_SECRET'))
     
-    return _s3
+    return _resource
+
+_client = None
+def client(): 
+    global _client
+    if _client is None:
+        _client = boto3.client('s3', region_name=config('REGION'), 
+                              aws_access_key_id=config('AWS_ID'), 
+                              aws_secret_access_key=config('AWS_SECRET'))
+    
+    return _client
 
 class Path(object):
 
@@ -25,13 +36,32 @@ class Path(object):
         parts = path.split('/')
         bucket, key = parts[0], '/'.join(parts[1:])
         
-        self._bucket = s3().Bucket(bucket)
+        self._bucket = resource().Bucket(bucket)
         self._bucket.create()
 
         self._object = self._bucket.Object(key)
     
     def write_bytes(self, data):
         self._object.upload_fileobj(BytesIO(data))
+    
+    @contextmanager
+    def write_multipart(self):
+        """Needs to have less than 10000 parts"""
+        uploader = self._object.initiate_multipart_upload()
+
+        parts = {}
+        try:
+            def write(data):
+                i = len(parts) + 1
+                parts[i] = uploader.Part(i).upload(Body=data)
+            
+            yield write
+            
+            parts = [{'PartNumber': i , 'ETag': p['ETag']} for i, p in parts.items()]
+            uploader.complete(MultipartUpload={'Parts': parts})
+        except Exception as e:
+            uploader.abort()
+            raise IOError('Multipart upload failed') from e
     
     def read_bytes(self):
         data = BytesIO()

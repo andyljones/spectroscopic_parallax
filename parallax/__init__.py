@@ -1,10 +1,11 @@
 import sys
 import logging
-import scipy as sp
-from . import crossmatch
-import matplotlib.pyplot as plt 
-
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+import scipy as sp
+import matplotlib.pyplot as plt 
+from . import crossmatch
+
 
 def startup():
     import aws
