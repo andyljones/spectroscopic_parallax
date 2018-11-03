@@ -11,6 +11,7 @@ import base64
 import logging
 from io import StringIO
 import pandas as pd
+from . import config
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -36,24 +37,19 @@ su ec2-user -l -c '
 '
 """
 
-def config(key):
-    config = {**json.load(open('config.json')), **json.load(open('credentials.json'))}
-    return config[key]
-
 _ec2 = None
 def ec2():
     global _ec2
     if _ec2 is None:
-        _ec2 = boto3.resource('ec2', region_name=config('REGION'), 
-                              aws_access_key_id=config('AWS_ID'), 
-                              aws_secret_access_key=config('AWS_SECRET'))
+        _ec2 = boto3.resource('ec2', region_name=config('REGION')) 
     
     return _ec2
 
 def instance_spec(image=None, script=None, **kwargs):
     defaults = {'ImageId': config('IMAGE'),
                 'KeyName': config('KEYPAIR'),
-                'SecurityGroups': [config('SSH_GROUP'), config('MUTUAL_ACCESS_GROUP')],
+                'SecurityGroups': [config('MUTUAL_ACCESS_GROUP'), config("SSH_GROUP")],
+                'IamInstanceProfile': {'Name': config("IAM_ROLE")},
                 'InstanceType': config('INSTANCE'),
                 'Placement': {'AvailabilityZone': config('AVAILABILITY_ZONE')},
                 'UserData': '#!/bin/bash\n'}
@@ -247,7 +243,7 @@ def kill(processes):
 
 def restart(sess):
     kill(sess['processes'])
-    return session(sess['instance'])
+    sess['processes'] = session(sess['instance'])['processes']
 
 def session(instance):
     log.info(f'SSH command is "{ssh(instance)}"')

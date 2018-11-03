@@ -3,20 +3,15 @@ import botocore
 import json
 from io import BytesIO
 from contextlib import contextmanager
+from . import config
 
 __all__ = ('Path',)
-
-def config(key):
-    config = {**json.load(open('config.json')), **json.load(open('credentials.json'))}
-    return config[key]
 
 _resource = None
 def resource(): 
     global _resource
     if _resource is None:
-        _resource = boto3.resource('s3', region_name=config('REGION'), 
-                              aws_access_key_id=config('AWS_ID'), 
-                              aws_secret_access_key=config('AWS_SECRET'))
+        _resource = boto3.resource('s3', region_name=config('REGION'))
     
     return _resource
 
@@ -24,9 +19,7 @@ _client = None
 def client(): 
     global _client
     if _client is None:
-        _client = boto3.client('s3', region_name=config('REGION'), 
-                              aws_access_key_id=config('AWS_ID'), 
-                              aws_secret_access_key=config('AWS_SECRET'))
+        _client = boto3.client('s3', region_name=config('REGION')) 
     
     return _client
 
