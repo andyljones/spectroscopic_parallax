@@ -5,15 +5,11 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 import scipy as sp
 import matplotlib.pyplot as plt 
 from . import crossmatch
-
+from .aws import ec2
 
 def startup():
-    import aws
-    instance = aws.request_spot('python', .25, script=aws.CONFIG, image='python-ec2')
-    aws.await_boot(instance)
-    aws.tunnel(instance)
-    aws.rsync(instance)
-    aws.remote_console()
+    instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')
+    sess = ec2.session(instance)
 
 def run():
     raw = crossmatch.load()

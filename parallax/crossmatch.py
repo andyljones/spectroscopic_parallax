@@ -4,7 +4,7 @@ import scipy as sp
 import astropy
 import os
 from astroquery.gaia import Gaia
-from . import s3
+from .aws import s3
 import logging
 import time
 import pandas as pd
