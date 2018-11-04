@@ -1,3 +1,4 @@
+import requests
 from io import BytesIO
 import tempfile
 import scipy as sp
@@ -8,15 +9,23 @@ from .aws import s3
 import logging
 import time
 import pandas as pd
-
-os.environ['GAIA_TOOLS_DATA'] = '/home/ec2-user/code/data/gaia_tools'
-import gaia_tools
-import gaia_tools.load
-import gaia_tools.xmatch
+from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 log = logging.getLogger(__name__)
 
 PATH = 'alj.data/parallax/apogee_gaia.fits'
+
+APRED_VERS = 'r8'
+ASPCAP_VER = 'l31c'
+RESULTS_VER = 'l31c.2'
+
+def fetch_apogee():
+    """APOGEE DR14 info: https://www.sdss.org/dr14/irspec/spectro_data/"""
+
+    url = f'https://data.sdss.org/sas/dr14/apogee/spectro/redux/{APRED_VERS}/stars/{ASPCAP_VER}/{RESULTS_VER}/allStar-{RESULTS_VER}.fits'
+    r = requests.get(url)
+    return astropy.table.Table.read(BytesIO(r.content), hdu=1)
 
 def fetch_gaia(tmass_ids):
     query = """
@@ -52,8 +61,8 @@ def fetch_gaia(tmass_ids):
         if job.get_phase() == 'COMPLETED':
             return job.get_results()
 
-def fetch():
-    apogee = astropy.table.Table(gaia_tools.load.apogee())
+def fetch_catalogue():
+    apogee = fetch_apogee()
 
     apogee['tmass_id'] = (pd.Series(apogee['APOGEE_ID'])
                                 .str.strip()
@@ -63,26 +72,90 @@ def fetch():
 
     gaia = fetch_gaia(sp.unique(apogee['tmass_id']))
 
-    joint = astropy.table.join(gaia, apogee, 'tmass_id')
+    catalogue = astropy.table.join(gaia, apogee, 'tmass_id')
 
-    return joint
+    return catalogue
 
-def stringify(table):
-    objects = [k for k, v in table.dtype.fields.items() if v[0] == 'O']
+def stringify(catalogue):
+    objects = [k for k, v in catalogue.dtype.fields.items() if v[0] == 'O']
     for o in objects:
-        table[o] = table[o].astype(str)
+        catalogue[o] = catalogue[o].astype(str)
 
-def load():
+def load_catalogue():
     path = s3.Path(PATH)
     if not path.exists():
         log.info('No apogee-gaia cache available, creating it from scratch')
-        table = fetch()
+        catalogue = fetch_catalogue()
 
-        stringify(table)
+        stringify(catalogue)
         bytesio = BytesIO()
-        table.write(bytesio, format='fits')
+        catalogue.write(bytesio, format='fits')
         bytesio.seek(0)
         bytestring = bytesio.read()
         path.write_bytes(bytestring)
 
     return astropy.table.Table.read(BytesIO(path.read_bytes()))
+
+def fetch_spectrum(telescope, location_id, file):
+    """Data model: https://data.sdss.org/datamodel/files/APOGEE_REDUX/APRED_VERS/APSTAR_VERS/TELESCOPE/LOCATION_ID/apStar.html#hdu1"""
+
+    url = f'https://data.sdss.org/sas/dr14/apogee/spectro/redux/{APRED_VERS}/stars/{telescope.strip()}/{location_id}/{file.strip()}'
+    r = requests.get(url)
+    r.raise_for_status()
+    hdus = astropy.io.fits.open(BytesIO(r.content))
+
+    flux, errors = hdus[1].data[0], hdus[2].data[0]
+
+    header = hdus[1].header
+    wavelengths = 10**(header['CRVAL1'] + header['CDELT1']*sp.arange(header['NAXIS1']))
+    return pd.DataFrame({
+            'flux': hdus[1].data[0].astype(float), 
+            'error': hdus[2].data[0].astype(float)
+        }, index=wavelengths)
+
+def load_spectrum_group(telescope, location_id, files):
+    path = s3.Path(f'alj.data/parallax/spectra/{telescope}/{location_id}')
+    if not path.exists():
+        spectra = {}
+        for file in files:
+            try:
+                spectra[file] = fetch_spectrum(telescope, location_id, file)
+            except:
+                log.exception(f'Failed on {file}')
+
+        if spectra:
+            spectra = pd.concat(spectra, 1).swaplevel(0, 1, 1).sort_index(axis=1)
+        else:
+            spectra = pd.DataFrame(columns=pd.MultiIndex.from_arrays([[], []]))
+
+        bs = BytesIO()
+        spectra.to_pickle(bs)
+        bs.seek(0)
+        bs = bs.read()
+        path.write_bytes(bs)
+    
+    #TODO: Handle updated file lists
+    spectra = pd.read_pickle(BytesIO(path.read_bytes()))
+    return spectra
+
+def load_spectra(parent):
+    with ProcessPoolExecutor(4) as pool:
+        futures = {}
+
+        keys = parent[['TELESCOPE', 'LOCATION_ID']]
+        groups = parent['FILE'].group_by(keys).groups
+        for (telescope, location_id), files in tqdm(zip(groups.keys, groups), total=len(groups)):
+            telescope = telescope.decode()
+            future = pool.submit(load_spectrum_group, telescope, location_id, files)
+            futures[future] = (telescope, location_id)
+        
+        results = []
+        for future in tqdm(as_completed(futures), total=len(groups)):
+            try:
+                key = futures[future]
+                results.append(future.result())
+            except Exception:
+                log.exception(f'Exception while fetching {key}')
+        results = pd.concat(results, 1) 
+    
+    return results

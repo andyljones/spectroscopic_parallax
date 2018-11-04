@@ -12,7 +12,7 @@
 ### EC2
   * Use the [IAM](https://console.aws.amazon.com/iam/home) to create 
     * a user and an access key for that user, putting the AWS access key and secret in [`~/.aws/credentials`](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#iam-role)
-    * an IAM role for EC2 allowing full access to S3, putting the IAM profile ARN in the `config.json`
+    * an IAM role for EC2 allowing full access to S3, putting the IAM role name in the `config.json`
   * Use the [EC2 dashboard](https://console.aws.amazon.com/ec2) to create 
     * an SSH key pair, putting the `.pem` file in `~/.ssh` and the key name in the `config.json`
     * a security group allowing SSH access, putting the group name in `config.json`
