@@ -19,12 +19,6 @@ log = logging.getLogger(__name__)
 PATH = 'alj.data/parallax/apogee_gaia.fits'
 
 def fetch_gaia(tmass_ids):
-    """This was all crap; didn't realise there were official matchings
-    GAIA-WISE match comes from the official GAIA release: https://gea.esac.esa.int/archive/
-    GAIA-APOGEE match is derived from GAIA-2MASS match, as 2MASS was used to guide APOGEE target selection.
-    So: load APOGEE data, cross-match to GAIA on the 2MASS ID (APOGEE_ID column, with the 2M stripped), cross-match to WISE on the WISE ID
-    """
-
     query = """
         select
             mine.tmass_id as tmass_id,
@@ -59,25 +53,36 @@ def fetch_gaia(tmass_ids):
             return job.get_results()
 
 def fetch():
-    apogee = gaia_tools.load.apogee()
+    apogee = astropy.table.Table(gaia_tools.load.apogee())
 
-    tmass_ids = pd.Series(apogee.APOGEE_ID).apply(bytes.decode).str.strip().str[2:].astype(bytes)
-    mask = (tmass_ids.apply(len) == 16)
-    apogee, tmass_ids = apogee[mask], tmass_ids[mask].values
+    apogee['tmass_id'] = (pd.Series(apogee['APOGEE_ID'])
+                                .str.strip()
+                                .str[2:]
+                                .astype(bytes).values)
+    apogee = apogee[sp.vectorize(len)(apogee['tmass_id']) == 16]
 
-    gaia = fetch_gaia(tmass_ids.unique())
+    gaia = fetch_gaia(sp.unique(apogee['tmass_id']))
 
-    mask = sp.in1d(tmass_ids, gaia['tmass_id'])
-    sorter = sp.argsort(tmass_ids)
-    indices = sorter[sp.searchsorted(tmass_ids, gaia['tmass_id'], sorter=sorter)]
-    apogee = astropy.table.Table(apogee)[indices][mask]
+    joint = astropy.table.join(gaia, apogee, 'tmass_id')
 
-    joint = astropy.table.hstack([gaia, apogee])
     return joint
+
+def stringify(table):
+    objects = [k for k, v in table.dtype.fields.items() if v[0] == 'O']
+    for o in objects:
+        table[o] = table[o].astype(str)
 
 def load():
     path = s3.Path(PATH)
     if not path.exists():
         log.info('No apogee-gaia cache available, creating it from scratch')
-        path.write_bytes(fetch())
+        table = fetch()
+
+        stringify(table)
+        bytesio = BytesIO()
+        table.write(bytesio, format='fits')
+        bytesio.seek(0)
+        bytestring = bytesio.read()
+        path.write_bytes(bytestring)
+
     return astropy.table.Table.read(BytesIO(path.read_bytes()))
