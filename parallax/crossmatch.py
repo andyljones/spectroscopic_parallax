@@ -93,6 +93,7 @@ def load_catalogue():
         bytesio.seek(0)
         bytestring = bytesio.read()
         path.write_bytes(bytestring)
+        time.sleep(1) # Going straight to reading can time out sometimes
 
     return astropy.table.Table.read(BytesIO(path.read_bytes()))
 
@@ -108,9 +109,11 @@ def fetch_spectrum(telescope, location_id, file):
 
     header = hdus[1].header
     wavelengths = 10**(header['CRVAL1'] + header['CDELT1']*sp.arange(header['NAXIS1']))
+    wavelengths = sp.around(wavelengths, 2)
     return pd.DataFrame({
             'flux': hdus[1].data[0].astype(float), 
-            'error': hdus[2].data[0].astype(float)
+            'error': hdus[2].data[0].astype(float),
+            'mask': hdus[3].data[0].astype(int)
         }, index=wavelengths)
 
 def load_spectrum_group(telescope, location_id, files):
@@ -133,6 +136,7 @@ def load_spectrum_group(telescope, location_id, files):
         bs.seek(0)
         bs = bs.read()
         path.write_bytes(bs)
+        time.sleep(1) # Going straight to reading can time out sometimes
     
     #TODO: Handle updated file lists
     spectra = pd.read_pickle(BytesIO(path.read_bytes()))
