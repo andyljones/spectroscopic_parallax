@@ -3,14 +3,15 @@ from io import BytesIO
 import tempfile
 import scipy as sp
 import astropy
+import astropy.table
 import os
-from astroquery.gaia import Gaia
 from .aws import s3
 import logging
 import time
 import pandas as pd
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import pickle
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ def fetch_apogee():
     return astropy.table.Table.read(BytesIO(r.content), hdu=1)
 
 def fetch_gaia(tmass_ids):
+    from astroquery.gaia import Gaia
+
     query = """
         select
             mine.tmass_id as tmass_id,
@@ -110,11 +113,22 @@ def fetch_spectrum(telescope, location_id, file):
     header = hdus[1].header
     wavelengths = 10**(header['CRVAL1'] + header['CDELT1']*sp.arange(header['NAXIS1']))
     wavelengths = sp.around(wavelengths, 2)
+    #TODO: Return astropy Tables
     return pd.DataFrame({
             'flux': hdus[1].data[0].astype(float), 
             'error': hdus[2].data[0].astype(float),
             'mask': hdus[3].data[0].astype(int)
         }, index=wavelengths)
+
+def downsample(spectra):
+    spectra = spectra.copy()
+    for field in ['flux', 'error']:
+        if field in spectra:
+            spectra[field] = spectra[field].astype(sp.float32)
+    for field in ['mask']:
+        if field in spectra:
+            spectra[field] = spectra[field].astype(sp.int32)
+    return spectra
 
 def load_spectrum_group(telescope, location_id, files):
     path = s3.Path(f'alj.data/parallax/spectra/{telescope}/{location_id}')
@@ -131,35 +145,30 @@ def load_spectrum_group(telescope, location_id, files):
         else:
             spectra = pd.DataFrame(columns=pd.MultiIndex.from_arrays([[], []]))
 
-        bs = BytesIO()
-        spectra.to_pickle(bs)
-        bs.seek(0)
-        bs = bs.read()
-        path.write_bytes(bs)
-        time.sleep(1) # Going straight to reading can time out sometimes
+        path.write_bytes(pickle.dumps(spectra))
+        return spectra
     
-    #TODO: Handle updated file lists
-    spectra = pd.read_pickle(BytesIO(path.read_bytes()))
+    #TODO: These are needed to get down to a reasonable combined file size. Would be better if it
+    # was done in `fetch_spectrum` though! Not changing it now because I dont have 3hr to spare.
+    spectra = downsample(pd.read_pickle(BytesIO(path.read_bytes())))
     return spectra
 
 def load_spectra(parent):
-    with ProcessPoolExecutor(4) as pool:
-        futures = {}
-
+    log.warn('If the cuts change, the spectra will not be updated')
+    #TODO: Handle updated file lists. Need to make note of missing files
+    #TODO: Move away from pickling - will break when pandas changes
+    #TODO: Restore parallelism. Kept hitting broken process pool errors, despite everything working fine in serial?
+    path = s3.Path(f'alj.data/parallax/spectra/parent')
+    if not path.exists():
         keys = parent[['TELESCOPE', 'LOCATION_ID']]
         groups = parent['FILE'].group_by(keys).groups
+        spectra = []
         for (telescope, location_id), files in tqdm(zip(groups.keys, groups), total=len(groups)):
             telescope = telescope.decode()
-            future = pool.submit(load_spectrum_group, telescope, location_id, files)
-            futures[future] = (telescope, location_id)
-        
-        results = []
-        for future in tqdm(as_completed(futures), total=len(groups)):
-            try:
-                key = futures[future]
-                results.append(future.result())
-            except Exception:
-                log.exception(f'Exception while fetching {key}')
-        results = pd.concat(results, 1) 
+            spectra.append(load_spectrum_group(telescope, location_id, files))
+        spectra = pd.concat(spectra, 1)        
+        path.write_bytes(pickle.dumps(spectra))
+        return spectra
     
-    return results
+    spectra = pd.read_pickle(BytesIO(path.read_bytes()))
+    return spectra

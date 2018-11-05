@@ -5,4 +5,4 @@
  "MUTUAL_ACCESS_GROUP": "andyljones-mutual-access",
  "IAM_ROLE": "ec2-parallax",
  "IMAGE": "ami-0ff8a91507f77f867",
- "INSTANCE": "m4.xlarge"}
+ "INSTANCE": "m4.2xlarge"}

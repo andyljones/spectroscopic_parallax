@@ -6,16 +6,13 @@ import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt 
 from .aws import ec2
+from parallax import crossmatch
 
 def startup():
     instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')
     sess = ec2.session(instance)
 
-def run():
-    from . import crossmatch
-
-    catalogue = crossmatch.load_catalogue()
-
+def parent_sample(catalogue):
     cuts = {'upper_g': catalogue['LOGG'] <= 2.2,
             'nonnull_g': catalogue['LOGG'] > 0., # there are a few values less than zero that are not null
             'nonnull_k': catalogue['K'] > 0,
@@ -25,4 +22,10 @@ def run():
             'nonvariable': catalogue['phot_variable_flag'] != 'VARAIBLE',
             'nonduplicate': ~pd.Series(catalogue['tmass_id']).duplicated()}
     cut = sp.all(sp.vstack(cuts.values()).data, 0)
-    parent = catalogue[cut]
+    return catalogue[cut]
+
+def run():
+    parent = parent_sample(crossmatch.load_catalogue())
+
+
+    spectra = crossmatch.load_spectra(parent)

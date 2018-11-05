@@ -1,6 +1,7 @@
 import boto3
 import botocore
 import json
+import pickle
 from io import BytesIO
 from contextlib import contextmanager
 from . import config

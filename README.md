@@ -17,3 +17,4 @@
     * an SSH key pair, putting the `.pem` file in `~/.ssh` and the key name in the `config.json`
     * a security group allowing SSH access, putting the group name in `config.json`
     * a security group allowing mutual access, putting the group name in `config.json`
+  * You will want at least 32GB of memory.
