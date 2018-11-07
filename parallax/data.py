@@ -21,22 +21,43 @@ APRED_VERS = 'r8'
 ASPCAP_VER = 'l31c'
 RESULTS_VER = 'l31c.2'
 
+def drop_multidim_cols(table):
+    return table[[k for k, (d, _) in table.dtype.fields.items() if d.shape == ()]]
+
+def stringify(df):
+    # None of the bytestrings in these tables actually look like they should be bytestrings.
+    df = df.copy()
+
+    bytecols = df.columns[df.dtypes == object]
+    for c in bytecols:
+        df[c] = df[c].str.decode('ascii')
+
+    return df
+
 def fetch_apogee():
     """APOGEE DR14 info: https://www.sdss.org/dr14/irspec/spectro_data/"""
 
     url = f'https://data.sdss.org/sas/dr14/apogee/spectro/redux/{APRED_VERS}/stars/{ASPCAP_VER}/{RESULTS_VER}/allStar-{RESULTS_VER}.fits'
     r = requests.get(url)
-    return astropy.table.Table.read(BytesIO(r.content), hdu=1)
+    table = astropy.table.Table.read(BytesIO(r.content), hdu=1)
+    table = drop_multidim_cols(table)
+    
+    return (table
+                    .to_pandas()
+                    .rename(columns=str.lower)
+                    .pipe(stringify))
 
 def fetch_gaia(tmass_ids):
     from astroquery.gaia import Gaia
 
+    # Can't prefix columns with the table name, so have to settle on using 'panda_start' and 
+    # 'wise_start'
     query = """
         select
             mine.tmass_id as tmass_id,
-            '' as sep,
+            '' as gaia_start,
             gaia.*, 
-            '' as sep,
+            '' as wise_start,
             allwise.*
         from gaiadr2.gaia_source as gaia
 
@@ -52,58 +73,59 @@ def fetch_gaia(tmass_ids):
 
     with tempfile.NamedTemporaryFile(suffix='.xml') as tmp:
         os.remove(tmp.name) # astropy will complain if the file already exists
-        (astropy.table.Table(tmass_ids[:, None], names=['tmass_id'])
+        (astropy.table.Table(tmass_ids[:, None].astype(bytes), names=['tmass_id'])
             .write(tmp.name, format='votable'))
 
         log.info(f'Launching job for {len(tmass_ids)} 2MASS IDs')
         job = Gaia.launch_job_async(query, upload_resource=tmp.name, upload_table_name='mine')
+        log.info(f'Job ID is {job.get_jobid()}')
 
     while True:
         time.sleep(5)
         log.info(f'Job is {job.get_phase()}')
         if job.get_phase() == 'COMPLETED':
-            return job.get_results()
+            table = job.get_results()
+            break
+
+    df = table.to_pandas().pipe(stringify)
+
+    gaia_start = list(df.columns).index('gaia_start')
+    wise_start = list(df.columns).index('wise_start')
+    indices = sp.arange(len(df.columns))
+    masks = {'tmass': df.columns == 'tmass_id',
+             'gaia': (gaia_start < indices) & (indices < wise_start),
+             'wise': (wise_start < indices)}
+    df = pd.concat({k: df.loc[:, m] for k, m in masks.items()}, 1)
+
+    # Some fields have a _2 suffixed because they're replicated in GAIA and WISE
+    df = df.rename(columns=lambda c: c.split('_2')[0])
+
+    return df
 
 def fetch_catalogue():
     apogee = fetch_apogee()
 
-    apogee['tmass_id'] = (pd.Series(apogee['APOGEE_ID'])
+    apogee['tmass_id'] = (apogee['apogee_id']
                                 .str.strip()
-                                .str[2:]
-                                .astype(bytes).values)
-    apogee = apogee[sp.vectorize(len)(apogee['tmass_id']) == 16]
+                                .str[2:])
+                                
+    apogee = apogee[apogee.tmass_id.apply(len) == 16]
 
-    gaia = fetch_gaia(sp.unique(apogee['tmass_id']))
+    gaia = fetch_gaia(apogee['tmass_id'].unique())
 
-    catalogue = astropy.table.join(gaia, apogee, 'tmass_id')
-
-    # pandas dataframes seem a lot more appropriate for catalogues than 
-    # astropy tables. much better support for grouping, for one.
-    one_dim = [k for k, (d, _) in catalogue.dtype.fields.items() if d.shape == ()]
-    catalogue = catalogue[one_dim].to_pandas()
-
+    apogee = pd.concat({'apogee': apogee}, 1)
+    catalogue = pd.merge(apogee, gaia, left_on=(('apogee', 'tmass_id'),), right_on=(('tmass', 'tmass_id'),))
     return catalogue
-
-def stringify(catalogue):
-    objects = [k for k, v in catalogue.dtype.fields.items() if v[0] == 'O']
-    for o in objects:
-        catalogue[o] = catalogue[o].astype(str)
 
 def load_catalogue():
     path = s3.Path(PATH)
     if not path.exists():
         log.info('No apogee-gaia cache available, creating it from scratch')
         catalogue = fetch_catalogue()
-
-        stringify(catalogue)
-        bytesio = BytesIO()
-        catalogue.write(bytesio, format='fits')
-        bytesio.seek(0)
-        bytestring = bytesio.read()
-        path.write_bytes(bytestring)
+        path.write_bytes(pickle.dumps(catalogue))
         time.sleep(1) # Going straight to reading can time out sometimes
 
-    return astropy.table.Table.read(BytesIO(path.read_bytes()))
+    return pickle.loads(path.read_bytes())
 
 def fetch_spectrum(telescope, location_id, file):
     """Data model: https://data.sdss.org/datamodel/files/APOGEE_REDUX/APRED_VERS/APSTAR_VERS/TELESCOPE/LOCATION_ID/apStar.html#hdu1"""
