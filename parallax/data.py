@@ -102,7 +102,7 @@ def fetch_gaia(tmass_ids):
 
     return df
 
-def fetch_catalogue():
+def fetch_catalog():
     apogee = fetch_apogee()
 
     apogee['tmass_id'] = (apogee['apogee_id']
@@ -114,15 +114,15 @@ def fetch_catalogue():
     gaia = fetch_gaia(apogee['tmass_id'].unique())
 
     apogee = pd.concat({'apogee': apogee}, 1)
-    catalogue = pd.merge(apogee, gaia, left_on=(('apogee', 'tmass_id'),), right_on=(('tmass', 'tmass_id'),))
-    return catalogue
+    catalog = pd.merge(apogee, gaia, left_on=(('apogee', 'tmass_id'),), right_on=(('tmass', 'tmass_id'),))
+    return catalog
 
-def load_catalogue():
+def load_catalog():
     path = s3.Path(PATH)
     if not path.exists():
         log.info('No apogee-gaia cache available, creating it from scratch')
-        catalogue = fetch_catalogue()
-        path.write_bytes(pickle.dumps(catalogue))
+        catalog = fetch_catalog()
+        path.write_bytes(pickle.dumps(catalog))
         time.sleep(1) # Going straight to reading can time out sometimes
 
     return pickle.loads(path.read_bytes())
@@ -181,7 +181,7 @@ def load_spectrum_group(telescope, location_id, files):
     spectra = pd.read_pickle(BytesIO(path.read_bytes())).pipe(downsample)
     return spectra
 
-def load_spectra(parent):
+def load_spectra(catalog):
     log.warn('If the cuts change, the spectra will not be updated')
     #TODO: Handle updated file lists. Need to make note of missing files
     #TODO: Move away from pickling - will break when pandas changes
@@ -189,7 +189,7 @@ def load_spectra(parent):
     path = s3.Path(f'alj.data/parallax/spectra/parent')
     if not path.exists():
         spectra = []
-        for (telescope, location_id), files in tqdm(parent.apogee.groupby(['telescope', 'location_id']).file):
+        for (telescope, location_id), files in tqdm(catalog.apogee.groupby(['telescope', 'location_id']).file):
             spectra.append(load_spectrum_group(telescope.strip(), location_id, list(files)))
         spectra = pd.concat(spectra)        
         path.write_bytes(pickle.dumps(spectra))

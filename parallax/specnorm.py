@@ -11,6 +11,7 @@ CHIPS = {
     'c': (16490, 16950)}
 
 def normalize(spectra):
+    #TODO: Add parallelization
     stars = spectra.index
     wavelengths = spectra.flux.columns.values.copy()
     flux = spectra.flux.values.copy()
