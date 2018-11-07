@@ -148,14 +148,17 @@ def fetch_spectrum(telescope, location_id, file):
         }, index=wavelengths)
 
 def downsample(spectra):
-    spectra = spectra.copy()
+    #TODO: These are needed to get down to a reasonable combined file size. Would be better if it
+    # was done in `fetch_spectrum` though! Not changing it now because I dont have 3hr to spare 
+    # re-caching everything.
+    result = {}
     for field in ['flux', 'error']:
         if field in spectra:
-            spectra[field] = spectra[field].astype(sp.float32)
+            result[field] = spectra[field].astype(sp.float32).T
     for field in ['mask']:
         if field in spectra:
-            spectra[field] = spectra[field].astype(sp.int32)
-    return spectra
+            result[field] = spectra[field].astype(sp.int32).T
+    return pd.concat(result, 1) if result else spectra
 
 def load_spectrum_group(telescope, location_id, files):
     path = s3.Path(f'alj.data/parallax/spectra/{telescope}/{location_id}')
@@ -174,11 +177,8 @@ def load_spectrum_group(telescope, location_id, files):
 
         path.write_bytes(pickle.dumps(spectra))
         return spectra
-    
-    #TODO: These are needed to get down to a reasonable combined file size. Would be better if it
-    # was done in `fetch_spectrum` though! Not changing it now because I dont have 3hr to spare 
-    # re-caching everything.
-    spectra = downsample(pd.read_pickle(BytesIO(path.read_bytes())))
+
+    spectra = pd.read_pickle(BytesIO(path.read_bytes())).pipe(downsample)
     return spectra
 
 def load_spectra(parent):
@@ -188,13 +188,10 @@ def load_spectra(parent):
     #TODO: Restore parallelism. Kept hitting broken process pool errors, despite everything working fine in serial?
     path = s3.Path(f'alj.data/parallax/spectra/parent')
     if not path.exists():
-        keys = parent[['TELESCOPE', 'LOCATION_ID']]
-        groups = parent['FILE'].group_by(keys).groups
         spectra = []
-        for (telescope, location_id), files in parent.groupby(['TELESCOPE', 'LOCATION_ID']).FILE:
-            telescope = telescope.decode()
-            spectra.append(load_spectrum_group(telescope, location_id, list(files)))
-        spectra = pd.concat(spectra, 1)        
+        for (telescope, location_id), files in tqdm(parent.apogee.groupby(['telescope', 'location_id']).file):
+            spectra.append(load_spectrum_group(telescope.strip(), location_id, list(files)))
+        spectra = pd.concat(spectra)        
         path.write_bytes(pickle.dumps(spectra))
         return spectra
     

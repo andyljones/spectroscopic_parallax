@@ -16,26 +16,24 @@ from . import config
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
-INITIAL_CONFIG = """
+KERNEL = """cd ~/code && nohup ipython kernel -f kernel.json >~/kernel.log 2>&1 &"""
+
+CONFIG = f"""
+su ec2-user -l -c '
+{KERNEL}
+'
+"""
+
+INITIAL_CONFIG = f"""
 cd /home/ec2-user
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && chmod u+x miniconda.sh 
 ./miniconda.sh -b -p miniconda && chown -R ec2-user:ec2-user miniconda
 rm miniconda.sh
 echo 'export PATH="$HOME/miniconda/bin:$PATH"' >> .bashrc
 mkdir code && chown -R ec2-user:ec2-user code
-su ec2-user -l -c '
-    conda install jupyter --yes
-    cd ~/code
-    nohup ipython kernel -f kernel.json >~/kernel.log 2>&1 &
-'
+{CONFIG}
 """
 
-CONFIG = """
-su ec2-user -l -c '
-    cd ~/code
-    nohup ipython kernel -f kernel.json >~/kernel.log 2>&1 &
-'
-"""
 
 _ec2 = None
 def ec2():
@@ -244,6 +242,10 @@ def kill(processes):
 def restart(sess):
     kill(sess['processes'])
     sess['processes'] = session(sess['instance'])['processes']
+
+def restart_kernel(instance):
+    command(instance, 'pkill -9 -f ipython')
+    command(instance, KERNEL)
 
 def session(instance):
     log.info(f'SSH command is "{ssh(instance)}"')
