@@ -9,3 +9,4 @@ cache
 data
 config.json
 credentials.json
+logs

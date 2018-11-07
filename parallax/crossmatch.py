@@ -77,6 +77,11 @@ def fetch_catalogue():
 
     catalogue = astropy.table.join(gaia, apogee, 'tmass_id')
 
+    # pandas dataframes seem a lot more appropriate for catalogues than 
+    # astropy tables. much better support for grouping, for one.
+    one_dim = [k for k, (d, _) in catalogue.dtype.fields.items() if d.shape == ()]
+    catalogue = catalogue[one_dim].to_pandas()
+
     return catalogue
 
 def stringify(catalogue):
@@ -164,9 +169,9 @@ def load_spectra(parent):
         keys = parent[['TELESCOPE', 'LOCATION_ID']]
         groups = parent['FILE'].group_by(keys).groups
         spectra = []
-        for (telescope, location_id), files in tqdm(zip(groups.keys, groups), total=len(groups)):
+        for (telescope, location_id), files in parent.groupby(['TELESCOPE', 'LOCATION_ID']).FILE:
             telescope = telescope.decode()
-            spectra.append(load_spectrum_group(telescope, location_id, files))
+            spectra.append(load_spectrum_group(telescope, location_id, list(files)))
         spectra = pd.concat(spectra, 1)        
         path.write_bytes(pickle.dumps(spectra))
         return spectra
