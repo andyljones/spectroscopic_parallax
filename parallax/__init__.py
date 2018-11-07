@@ -6,7 +6,7 @@ import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt 
 from .aws import ec2
-from parallax import crossmatch
+from parallax import data
 
 def startup():
     instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')
@@ -25,7 +25,5 @@ def parent_sample(catalogue):
     return catalogue[cut]
 
 def run():
-    parent = parent_sample(crossmatch.load_catalogue())
-
-
-    spectra = crossmatch.load_spectra(parent)
+    parent = parent_sample(data.load_catalogue())
+    spectra = data.load_spectra(parent)
