@@ -1,12 +1,14 @@
 import sys
 import logging
+import matplotlib.pyplot as plt
+plt.rcParams['figure.figsize'] = (12, 8)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt 
 from .aws import ec2
-from parallax import data
+from . import data, specnorm
 
 def startup():
     instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')
@@ -27,3 +29,4 @@ def parent_sample(catalogue):
 def run():
     parent = parent_sample(data.load_catalogue())
     spectra = data.load_spectra(parent)
+    normed = specnorm.normalize(spectra)

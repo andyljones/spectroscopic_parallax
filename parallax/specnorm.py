@@ -4,44 +4,46 @@ import scipy as sp
 from numpy.polynomial.chebyshev import Chebyshev
 
 #TODO: This is smaller than many errors encountered in practice
-# It's also totally inconsistent with the clipping value used below
 ERROR_LIM = 3.0
 CHIPS = {
     'a': (15150, 15800), 
     'b': (15890, 16540), 
     'c': (16490, 16950)}
 
+def normalize(spectra):
+    stars = spectra.index
+    wavelengths = spectra.flux.columns.values.copy()
+    flux = spectra.flux.values.copy()
+    error = spectra.error.reindex(columns=wavelengths).values.copy()
 
-def normalize(spectrum):
-    if isinstance(spectrum, pd.DataFrame):
-        rows = {k: normalize(r) for k, r in tqdm(spectrum.iterrows(), total=len(spectrum))}
-        return pd.DataFrame.from_dict(rows, orient='index').reindex_like(spectrum)
-    #TODO: This is missing the pixmask from the original code. What's the pixmask?
-    #TODO: This is slow. Operate on views of the underlying data.
+    bad_flux = sp.isnan(flux) | sp.isinf(flux)
+    bad_error = sp.isnan(error) | sp.isinf(error) | (error < 0)
+    bad = bad_flux | bad_error
 
-    df = spectrum.unstack(0)
-    wavelengths = df.index.values
-    flux, error = df.flux.values.copy(), df.error.values.copy()
-
-    bad = df.isnull().any(1) | df.eq(sp.inf).any(1) | df.error.le(0)
     flux[bad] = 1
     error[bad] = ERROR_LIM
 
-    var = ERROR_LIM**2 +  sp.zeros_like(error)
-    inv_var = 1/(var + error**2)
+    #TODO: pixlist is supposed to be used to zero many of these vars. Where's it come from?
+    var = ERROR_LIM**2 + sp.zeros_like(error)
+    inv_var = 1/(ERROR_LIM**2 + error**2)
 
-    norm_flux = sp.full_like(flux, 0)
+    norm_flux = sp.full_like(flux, 1)
     norm_error = sp.full_like(error, ERROR_LIM)
-    for _, (left, right) in CHIPS.items():
-        mask = (left < wavelengths) & (wavelengths < right)
-        fit = Chebyshev.fit(x=wavelengths[mask], y=flux[mask], w=inv_var[mask], deg=2)
+    for star in tqdm(range(len(stars))):
+        for _, (left, right) in CHIPS.items():
+            mask = (left < wavelengths) & (wavelengths < right)
+            fit = Chebyshev.fit(x=wavelengths[mask], y=flux[star][mask], w=inv_var[star][mask], deg=2)
 
-        #TODO: Is the denominator being negative an issue?
-        norm_flux[mask] = flux[mask]/fit(wavelengths[mask])
-        norm_error[mask] = error[mask]/fit(wavelengths[mask])
+            #TODO: Is the denominator being negative an issue?
+            norm_flux[star][mask] = flux[star][mask] / fit(wavelengths[mask])
+            norm_error[star][mask] = error[star][mask]/ fit(wavelengths[mask])
 
-    unreliable = (norm_error > ERROR_LIM)
+    #TODO: Why is the unreliability threshold different from the limit value?
+    unreliable = (norm_error > .3)
     norm_flux[unreliable] = 1
     norm_error[unreliable] = ERROR_LIM
 
-    return pd.DataFrame({'error': norm_error, 'flux': norm_flux, 'mask': df['mask']}, index=wavelengths).unstack()
+    norm_flux = pd.DataFrame(norm_flux, stars, wavelengths)
+    norm_error = pd.DataFrame(norm_error, stars, wavelengths)
+    
+    return pd.concat({'flux': norm_flux, 'error': norm_error}, 1)
