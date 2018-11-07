@@ -149,7 +149,8 @@ def load_spectrum_group(telescope, location_id, files):
         return spectra
     
     #TODO: These are needed to get down to a reasonable combined file size. Would be better if it
-    # was done in `fetch_spectrum` though! Not changing it now because I dont have 3hr to spare.
+    # was done in `fetch_spectrum` though! Not changing it now because I dont have 3hr to spare 
+    # re-caching everything.
     spectra = downsample(pd.read_pickle(BytesIO(path.read_bytes())))
     return spectra
 
