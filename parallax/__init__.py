@@ -1,8 +1,6 @@
 import sys
 import logging
 import matplotlib.pyplot as plt
-plt.rcParams['figure.figsize'] = (12, 8)
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 import pandas as pd
 import scipy as sp

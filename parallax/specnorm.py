@@ -33,9 +33,11 @@ def normalize(spectra):
     for star in tqdm(range(len(stars))):
         for _, (left, right) in CHIPS.items():
             mask = (left < wavelengths) & (wavelengths < right)
+            #TODO: Why are we using Chebyshev polynomials rather than smoothing splines?
+            #TODO: Why are we using three polynomials rather than one?
+            #TODO: Is the denominator being zero/negative ever an issue?
             fit = Chebyshev.fit(x=wavelengths[mask], y=flux[star][mask], w=inv_var[star][mask], deg=2)
 
-            #TODO: Is the denominator being negative an issue?
             norm_flux[star][mask] = flux[star][mask] / fit(wavelengths[mask])
             norm_error[star][mask] = error[star][mask]/ fit(wavelengths[mask])
 

@@ -183,7 +183,7 @@ def load_spectrum_group(telescope, location_id, files):
 
 def load_spectra(catalog):
     log.warn('If the cuts change, the spectra will not be updated')
-    #TODO: Handle updated file lists. Need to make note of missing files
+    #TODO: Handle changing cuts/file lists. Need to make note of missing files
     #TODO: Move away from pickling - will break when pandas changes
     #TODO: Restore parallelism. Kept hitting broken process pool errors, despite everything working fine in serial?
     path = s3.Path(f'alj.data/parallax/spectra/parent')
