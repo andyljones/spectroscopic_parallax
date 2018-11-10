@@ -6,7 +6,7 @@ import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt 
 from .aws import ec2
-from . import data, specnorm
+from . import data, specnorm, tools
 
 def startup():
     instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')

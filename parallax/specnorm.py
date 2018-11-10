@@ -2,6 +2,8 @@ from tqdm import tqdm
 import pandas as pd 
 import scipy as sp
 from numpy.polynomial.chebyshev import Chebyshev
+from multiprocessing import cpu_count
+from . import tools
 
 #TODO: This is smaller than many errors encountered in practice
 ERROR_LIM = 3.0
@@ -10,7 +12,7 @@ CHIPS = {
     'b': (15890, 16540), 
     'c': (16490, 16950)}
 
-def normalize(spectra):
+def _normalize(spectra):
     #TODO: Add parallelization
     stars = spectra.index
     wavelengths = spectra.flux.columns.values.copy()
@@ -30,7 +32,7 @@ def normalize(spectra):
 
     norm_flux = sp.full_like(flux, 1)
     norm_error = sp.full_like(error, ERROR_LIM)
-    for star in tqdm(range(len(stars))):
+    for star in range(len(stars)):
         for _, (left, right) in CHIPS.items():
             mask = (left < wavelengths) & (wavelengths < right)
             #TODO: Why are we using Chebyshev polynomials rather than smoothing splines?
@@ -46,7 +48,16 @@ def normalize(spectra):
     norm_flux[unreliable] = 1
     norm_error[unreliable] = ERROR_LIM
 
-    norm_flux = pd.DataFrame(norm_flux, stars, wavelengths)
-    norm_error = pd.DataFrame(norm_error, stars, wavelengths)
+    # In the original, the masking is done in the parallax fitting code.
+    # Gonna do it earlier here to save a bit of memory.
+    mask = sp.any(sp.vstack([(l < wavelengths) & (wavelengths < u) for l, u in CHIPS.values()]), 0)
+
+    norm_flux = pd.DataFrame(norm_flux[:, mask], stars, wavelengths[mask])
+    norm_error = pd.DataFrame(norm_error[:, mask], stars, wavelengths[mask])
     
     return pd.concat({'flux': norm_flux, 'error': norm_error}, 1)
+
+def normalize(spectra, size=1000):
+    chunks = [spectra[i:i+size] for i in range(0, len(spectra), size)]
+    with tools.parallel(_normalize) as p:
+        return pd.concat(p.wait(p(c) for c in chunks))

@@ -49,8 +49,8 @@ def VariableExecutor(N=None, processes=True):
 def parallel(f, progress=True, **kwargs):
     """Sugar for using the VariableExecutor. Call as
     
-    with parallel(f) as g, wait:
-        ys = wait({x: g(x) for x in xs})
+    with parallel(f) as g:
+        ys = g.wait({x: g(x) for x in xs})
 
     and f'll be called in parallel on each x, and the results collected in a dictionary
     """
@@ -97,6 +97,7 @@ def parallel(f, progress=True, **kwargs):
                     break
 
         try:
-            yield submit, wait
+            submit.wait = wait
+            yield submit
         finally:
             cancel()
