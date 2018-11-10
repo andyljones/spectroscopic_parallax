@@ -8,6 +8,8 @@
   * [WISE bulk downloads](https://irsa.ipac.caltech.edu/data/download/wise-allwise/)
   * [Paper](https://arxiv.org/pdf/1810.09468.pdf)
   * [GAIA Archive](https://gea.esac.esa.int/archive/)
+  * [Photometric bands](https://en.wikipedia.org/wiki/Photometric_system)
+    * WISE W1 is 3.4um, W2 is 4.6um
 
 ### EC2
   * Use the [IAM](https://console.aws.amazon.com/iam/home) to create 

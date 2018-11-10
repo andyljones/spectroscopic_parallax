@@ -13,12 +13,12 @@ CHIPS = {
     'c': (16490, 16950)}
 
 def _normalize(spectra):
-    #TODO: Add parallelization
     stars = spectra.index
     wavelengths = spectra.flux.columns.values.copy()
     flux = spectra.flux.values.copy()
     error = spectra.error.reindex(columns=wavelengths).values.copy()
 
+    #TODO: Should negative fluxes be zero'd too?
     bad_flux = sp.isnan(flux) | sp.isinf(flux)
     bad_error = sp.isnan(error) | sp.isinf(error) | (error < 0)
     bad = bad_flux | bad_error
@@ -36,9 +36,13 @@ def _normalize(spectra):
         for _, (left, right) in CHIPS.items():
             mask = (left < wavelengths) & (wavelengths < right)
             #TODO: Why are we using Chebyshev polynomials rather than smoothing splines?
-            #TODO: Why are we using three polynomials rather than one?
+            #TODO: Why are we using three polynomials rather than one? Are spectra discontinuous between chips?
             #TODO: Is the denominator being zero/negative ever an issue?
-            fit = Chebyshev.fit(x=wavelengths[mask], y=flux[star][mask], w=inv_var[star][mask], deg=2)
+            fit = Chebyshev.fit(
+                    x=wavelengths[mask], 
+                    y=flux[star][mask],
+                    w=inv_var[star][mask],
+                    deg=2)
 
             norm_flux[star][mask] = flux[star][mask] / fit(wavelengths[mask])
             norm_error[star][mask] = error[star][mask]/ fit(wavelengths[mask])

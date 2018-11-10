@@ -196,4 +196,8 @@ def load_spectra(catalog):
         return spectra
     
     spectra = pd.read_pickle(BytesIO(path.read_bytes()))
-    return spectra
+    expected = catalog.apogee.file.str.strip().values
+    missing = set(expected) - set(spectra.index)
+    log.warn(f'Missing spectra for {len(missing)} stars out of {len(catalog)}')
+
+    return spectra.reindex(index=expected)
