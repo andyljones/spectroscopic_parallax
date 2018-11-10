@@ -101,3 +101,12 @@ def parallel(f, progress=True, **kwargs):
             yield submit
         finally:
             cancel()
+
+def cut(catalog, cuts):
+    cut = sp.all(sp.vstack(cuts.values()).data, 0)
+
+    for k, c in cuts.items():
+        log.info(f'{1 - c.mean():>3.0%} of the population is cut away by {k}')
+    log.info(f'{cut.mean():>3.0%} stars remain')
+    
+    return catalog[cut]

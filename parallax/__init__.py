@@ -30,13 +30,7 @@ def parent_sample(catalog):
             'positive_jhk_err': catalog.apogee[['j_err', 'h_err', 'k_err']].gt(0).all(1),
             'finite_wise': catalog.wise[['w1mpro', 'w2mpro']].apply(sp.isfinite).all(1),
             'positive_wise_err': catalog.wise[['w1mpro_error', 'w2mpro_error']].gt(0).all(1)}
-    cut = sp.all(sp.vstack(cuts.values()).data, 0)
-
-    for k, c in cuts.items():
-        log.info(f'{1 - c.mean():>3.0%} of the population is cut away by {k}')
-    log.info(f'{cut.mean():>3.0%} stars remain')
-    
-    return catalog[cut]
+    return tools.cut(catalog, cuts)
 
 def run_remote():
     catalog = parent_sample(data.load_catalog())
