@@ -1,7 +1,8 @@
+import pickle
 import pandas as pd
 import scipy as sp
 import scipy.optimize
-from . import tools 
+from . import tools, aws
 import logging
 
 log = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def solve(X, y, w, m, b0=None, lambd=30, check=False):
     #TODO: Why does the original use BFGS-B rather than BFGS? There are no constraints here
     #TODO: Oh lord this is slow. Can we parallelize it anyhow? 
     # I actually don't know any parallel quasi-Newton methods, worth reading up on.
-    # Expect this to take ~50 odd iterations to converge on the 'good' stars.
+    # Expect this to take ~100 odd iterations to converge on the 'good' stars.
     result = sp.optimize.minimize(f, b0, 
                     method='BFGS', 
                     jac=grad, 
@@ -94,6 +95,11 @@ def training_catalog(catalog):
         # This thresholds the goodness-of-fit of the astrometric solution to the observations made, along the scan direction
         'coryn': catalog.gaia.astrometric_chi2_al/sp.sqrt(catalog.gaia.astrometric_n_good_obs_al - 5) <= 35}
     return tools.cut(catalog, cuts)
+
+def save(b):
+    path = aws.s3.Path('alj.data/params/b')
+    path.write_bytes(pickle.dumps(b))
+    pass
 
 def fit(catalog, normed):
     training = training_catalog(catalog)
