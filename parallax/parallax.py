@@ -10,49 +10,65 @@ PARALLAX_OFFSET = 0.0483 #TODO: How much of a difference does this make?
 
 def design_matrix(catalog, normed):
     constant = sp.ones((len(catalog), 1))
-    gaia = catalog.gaia[[f'phot_{b}_mean_mag' for b in GAIA_BANDS]].values
-    tmass = catalog.apogee[TMASS_BANDS].values
-    wise = catalog.wise[WISE_BANDS].values
-    apogee = sp.log(sp.clip(normed.flux.values, .01, 1.2)) #TODO: How much of an impact does this clipping have?
-    X = sp.concatenate([constant, gaia, tmass, wise, apogee], 1)
+    gaia = catalog.gaia[[f'phot_{b}_mean_mag' for b in GAIA_BANDS]]
+    tmass = catalog.apogee[TMASS_BANDS]
+    wise = catalog.wise[WISE_BANDS]
 
-    m = sp.full(X.shape[1], 0)
-    m[-len(apogee):] = 1
+    aligned = normed.reindex(catalog.apogee.file.str.strip())
+    apogee = sp.log(sp.clip(aligned.flux.values, .01, 1.2)) #TODO: How much of an impact does this clipping have?
 
-    return X, m
+    X = sp.concatenate([constant, gaia.values, tmass.values, wise.values, apogee], 1)
 
-def design_errors(catalog, normed):
-    #TODO: Where's the magic 1.09 come from?
-    #TODO: Where's the magic 0.05 come from?
-    #TODO: Why are the errors unaffected by taking the log? Just assume ln is linear around 1?
-    constant = sp.zeros((len(catalog), 1))
-    gaia = 1.09*pd.concat([catalog.gaia[f'phot_{b}_mean_flux_error']/catalog.gaia[f'phot_{b}_mean_flux'] for b in GAIA_BANDS], 1).values
-    tmass = catalog.apogee[[f'{b}_err' for b in TMASS_BANDS]].values
-    wise = catalog.wise[[f'{b}_error' for b in WISE_BANDS]].values
-    apogee = sp.clip(normed.error.values, 0, .05) / sp.clip(normed.flux.values, .01, 1.2)
-    return sp.concatenate([constant, gaia, tmass, wise, apogee], 1)
+    cols = [('constant', ['constant']), ('gaia', gaia.columns), ('tmass', tmass.columns), ('wise', wise.columns), ('apogee', normed.flux.columns)]
+    cols = pd.MultiIndex.from_tuples([(d, c) for d, cs in cols for c in cs])
 
-def solve(X, y, w, m, lambd=30):
+    m = sp.zeros(len(cols))
+    m[cols.get_level_values(0) == 'apogee'] = 1
 
-    def f(b):   
+    return X, m, cols
+
+def check_grad(f, grad, b0, eps=1e-6, k=10):
+    """The easiest way to check the gradient is with sp.optimize.check_grad, but that checks the grad 
+    in every.single.coordinate, which takes forever. Fast way to do it is to pick a bunch of random 
+    vectors instead"""
+    sp.random.seed(20181111)
+    for _ in range(k):
+        db = sp.random.normal(size=len(b0))
+        db = eps*db/(db**2).sum()**.5
+
+        df = f(b0 + db) - f(b0)
+        dfhat = grad(b0) @ db
+        assert abs(df - dfhat)/df < 1e-3, 'Change in `f` and gradient-implied change in `f` were substantially different'
+
+def solve(X, y, w, m, lambd=30, check=False):
+
+    def f(b, *args):   
         yhat = sp.exp(X @ b)
         return .5*w @ (y - yhat)**2 + lambd*m @ sp.fabs(b)
     
-    def grad(b):
+    def grad(b, *args):
         yhat = sp.exp(X @ b)
-        return -X.T @ (yhat * w * (y - yhat)) + lambd*m*sp.sign(b)
+        # Fun fact: if you do `X.T @ v` here instead of `v @ X`, it's x10 slower
+        return -(yhat * w * (y - yhat)) @ X + lambd*m*sp.sign(b)
 
     D =  X.shape[1]
-    b0 = sp.full(D, 1e-3/D) #TODO: Should this be constant in l2 norm rather than l1?
+    b0 = sp.full(D, 1e-3/D) #TODO: My instinct is that this should this be constant in l2 norm rather than l1?
 
-    assert sp.optimize.check_grad(f, grad, b0) < 1e-3*f(b0), '`grad` does not appear to implement the gradient'
+    if check:
+        check_grad(f, grad, b0)
 
     #TODO: Evaluating the full hessian is infeasible, but is there any way we could generate the `hessp` arg?
-    #TODO: Why use -B rather than BFGS? There are no constraints here
-    result = sp.optimize.minimize(f, b0, 'L-BFGS-B', grad)
-    assert result.success
+    #TODO: Why use BFGS-B rather than BFGS? There are no constraints here
+    result = sp.optimize.minimize(f, b0, method='BFGS', jac=grad, options={'disp': True, 'maxiter': 1000})
+    assert result.success, 'Optimizer failed'
 
-    return result.x
+    bstar = result.x
+    return bstar
+
+def plot(b, cols):
+    b = pd.Series(b, cols)
+    b.apogee.plot()
+    pass
 
 def training_catalog(catalog):
     cuts = {
@@ -67,7 +83,7 @@ def fit(catalog, normed):
     training = training_catalog(catalog)
     good = (training.gaia.parallax_over_error > 20)
 
-    X, m = design_matrix(training, normed.reindex(training.apogee.file.str.strip()))
+    X, m, cols = design_matrix(training, normed)
     y = training.gaia.parallax.values + PARALLAX_OFFSET
     w = 1/training.gaia.parallax_error.values**2
 

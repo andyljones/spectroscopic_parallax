@@ -239,9 +239,12 @@ def kill(processes):
         log.info(f'Killing {k}, {p.pid}')
         p.terminate()
 
-def restart(sess):
+def restart_session(sess):
     kill(sess['processes'])
     sess['processes'] = session(sess['instance'])['processes']
+
+def interrupt_kernel(instance):
+    command(instance, 'pkill -INT -f ipython')
 
 def restart_kernel(instance):
     command(instance, 'pkill -9 -f ipython')
