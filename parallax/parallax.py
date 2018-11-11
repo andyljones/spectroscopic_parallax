@@ -1,7 +1,10 @@
 import pandas as pd
 import scipy as sp
 import scipy.optimize
-from . import tools
+from . import tools 
+import logging
+
+log = logging.getLogger(__name__)
 
 GAIA_BANDS = ['g', 'bp', 'rp']
 TMASS_BANDS = ['j', 'h', 'k']
@@ -40,7 +43,7 @@ def check_grad(f, grad, b0, eps=1e-6, k=10):
         dfhat = grad(b0) @ db
         assert abs(df - dfhat)/df < 1e-3, 'Change in `f` and gradient-implied change in `f` were substantially different'
 
-def solve(X, y, w, m, lambd=30, check=False):
+def solve(X, y, w, m, b0=None, lambd=30, check=False):
 
     def f(b, *args):   
         yhat = sp.exp(X @ b)
@@ -50,16 +53,29 @@ def solve(X, y, w, m, lambd=30, check=False):
         yhat = sp.exp(X @ b)
         # Fun fact: if you do `X.T @ v` here instead of `v @ X`, it's x10 slower
         return -(yhat * w * (y - yhat)) @ X + lambd*m*sp.sign(b)
+    
+    i = 0
+    def callback(b):
+        nonlocal i
+        i = i + 1
+        log.info(f'Step {i}: loss is {f(b):.1f}')
 
-    D =  X.shape[1]
-    b0 = sp.full(D, 1e-3/D) #TODO: My instinct is that this should this be constant in l2 norm rather than l1?
+    #TODO: My instinct is that this should this be constant in l2 norm rather than l1?
+    b0 = sp.full(len(m), 1e-3/len(m)) if b0 is None else b0
 
     if check:
         check_grad(f, grad, b0)
 
     #TODO: Evaluating the full hessian is infeasible, but is there any way we could generate the `hessp` arg?
-    #TODO: Why use BFGS-B rather than BFGS? There are no constraints here
-    result = sp.optimize.minimize(f, b0, method='BFGS', jac=grad, options={'disp': True, 'maxiter': 1000})
+    #TODO: Why does the original use BFGS-B rather than BFGS? There are no constraints here
+    #TODO: Oh lord this is slow. Can we parallelize it anyhow? 
+    # I actually don't know any parallel quasi-Newton methods, worth reading up on.
+    # Expect this to take ~50 odd iterations to converge on the 'good' stars.
+    result = sp.optimize.minimize(f, b0, 
+                    method='BFGS', 
+                    jac=grad, 
+                    callback=callback,
+                    options={'disp': True, 'maxiter': 1000})
     assert result.success, 'Optimizer failed'
 
     bstar = result.x
@@ -87,8 +103,12 @@ def fit(catalog, normed):
     y = training.gaia.parallax.values + PARALLAX_OFFSET
     w = 1/training.gaia.parallax_error.values**2
 
-    b = solve(X, y, w, m)
+    #TODO: Replace this 'good' initialization with an explicit prior. Which is all it is really. 
+    # Gonna need a strooooong prior to overcome the `exp` in the loss. L2 won't cut it.
+    b = solve(X[good].copy(), y[good], w[good], m)
+    b = solve(X, y, w, m, b)
 
+    #TODO: Propogate the errors. Physicists pay attention to the second moment, weird.
     # Xe = design_errors(training, normed)
     # ye = training.gaia.parallax_error
     
