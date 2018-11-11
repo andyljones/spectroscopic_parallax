@@ -1,5 +1,6 @@
 import pandas as pd
 import scipy as sp
+import scipy.optimize
 from . import tools
 
 GAIA_BANDS = ['g', 'bp', 'rp']
@@ -31,25 +32,15 @@ def design_errors(catalog, normed):
     apogee = sp.clip(normed.error.values, 0, .05) / sp.clip(normed.flux.values, .01, 1.2)
     return sp.concatenate([constant, gaia, tmass, wise, apogee], 1)
 
-def training_catalog(catalog):
-    cuts = {
-        'finite_parallax': catalog.gaia.parallax < sp.inf,
-        'multiobservation': catalog.gaia.visibility_periods_used >= 8,
-        'low_error': catalog.gaia.parallax_error < .1,
-        # This thresholds the goodness-of-fit of the astrometric solution to the observations made, along the scan direction
-        'coryn': catalog.gaia.astrometric_chi2_al/sp.sqrt(catalog.gaia.astrometric_n_good_obs_al - 5) <= 35}
-    return tools.cut(catalog, cuts)
-
 def solve(X, y, w, m, lambd=30):
 
     def f(b):   
         yhat = sp.exp(X @ b)
-        return .5*w @ (y - yhat)**2 + lambd*(m * sp.abs(b)).sum()
+        return .5*w @ (y - yhat)**2 + lambd*m @ sp.fabs(b)
     
     def grad(b):
-        #TODO: Check the @s don't throw up any DxD intermediate steps
         yhat = sp.exp(X @ b)
-        return -X.T @  yhat @ (w * (y - yhat)) + lambd*m*sp.sign(b)
+        return -X.T @ (yhat * w * (y - yhat)) + lambd*m*sp.sign(b)
 
     D =  X.shape[1]
     b0 = sp.full(D, 1e-3/D) #TODO: Should this be constant in l2 norm rather than l1?
@@ -63,11 +54,22 @@ def solve(X, y, w, m, lambd=30):
 
     return result.x
 
+def training_catalog(catalog):
+    cuts = {
+        'finite_parallax': catalog.gaia.parallax < sp.inf,
+        'multiobservation': catalog.gaia.visibility_periods_used >= 8,
+        'low_error': catalog.gaia.parallax_error < .1,
+        # This thresholds the goodness-of-fit of the astrometric solution to the observations made, along the scan direction
+        'coryn': catalog.gaia.astrometric_chi2_al/sp.sqrt(catalog.gaia.astrometric_n_good_obs_al - 5) <= 35}
+    return tools.cut(catalog, cuts)
+
 def fit(catalog, normed):
     training = training_catalog(catalog)
-    X, m = design_matrix(training, normed)
-    y = training.gaia.parallax + PARALLAX_OFFSET
-    w = 1/training.gaia.parallax_error**2
+    good = (training.gaia.parallax_over_error > 20)
+
+    X, m = design_matrix(training, normed.reindex(training.apogee.file.str.strip()))
+    y = training.gaia.parallax.values + PARALLAX_OFFSET
+    w = 1/training.gaia.parallax_error.values**2
 
     b = solve(X, y, w, m)
 

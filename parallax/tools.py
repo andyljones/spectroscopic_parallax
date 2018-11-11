@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 plt.rcParams['figure.figsize'] = (12, 8)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
+import scipy as sp
 from tqdm import tqdm
 from contextlib import contextmanager
 import multiprocessing

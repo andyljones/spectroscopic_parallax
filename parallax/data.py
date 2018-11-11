@@ -28,6 +28,7 @@ def stringify(df):
     # None of the bytestrings in these tables actually look like they should be bytestrings.
     df = df.copy()
 
+    #TODO: Strip most of these bytestrings next time you re-cache everything
     bytecols = df.columns[df.dtypes == object]
     for c in bytecols:
         df[c] = df[c].str.decode('ascii')
