@@ -26,9 +26,11 @@ def _normalize(spectra):
     flux[bad] = 1
     error[bad] = ERROR_LIM
 
-    #TODO: pixlist is supposed to be used to zero many of these vars. Where's it come from?
-    var = ERROR_LIM**2 + sp.zeros_like(error)
-    inv_var = 1/(ERROR_LIM**2 + error**2)
+    #TODO: Where does pixlist come from?
+    pixlist = sp.loadtxt('pixlist.txt', dtype=int)
+    var = sp.full_like(error, ERROR_LIM**2)
+    var[:, pixlist] = 0
+    inv_var = 1/(var**2 + error**2)
 
     norm_flux = sp.full_like(flux, 1)
     norm_error = sp.full_like(error, ERROR_LIM)
