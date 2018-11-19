@@ -266,25 +266,32 @@ def session(instance):
     return {'instance': instance, 'processes': processes}
 
 def example():
-    import aws
+    from .aws import ec2
 
-    # Set up your credentials.json and config.json file first. 
-    # There are templates in this repo; copy them into your working dir
+    # Follow the readme and set up your config.json and credentials file first. 
 
     # Then request a spot instance!
-    instance = aws.request_spot('python', .25, script=aws.INITIAL_CONFIG)
+    instance = ec2.request_spot('python', .25, script=ec2.INITIAL_CONFIG)
 
-    # Once you've got it, can check how boot is going with
-    aws.cloud_init_output(instance)
+    # The command below will wait till the instance is booted, then start a rsync, SSH tunnel and remote console.
+    # It'll also print a SSH command for the console if you want to remote in and check things yourself.
+    session = ec2.session(instance)
 
-    # Set up a tunnel to the remote kernel, set up the rsync, then start a remote console
+    # If the rsync/ssh/client fail, you can restart the session with
+    ec2.restart_session(session)
 
-    # Use the console and ! commands to install any packages you need. Then create an image with
-    aws.create_image(instance, name='python-ec2')
+    # There are also commands for interrupting/restarting the kernel rather than the session.
+    ec2.restart_kernel(session)
 
-    # Now test it out
-    instance = aws.request_spot('python', .25, script=aws.CONFIG, image='python-ec2')
-    session = aws.session(instance)
+    # If you don't want to set up the machine every time, use the console and ! commands to install any packages you need.
+    # Then create an image with
+    ec2.create_image(instance, name='python-ec2')
+    # Be warned - this'll reboot the machine. Only use this for dependencies and the like; for workspace data, use S3.
+
+    # In future, generate the instance from an image with
+    instance = ec2.request_spot('python', .25, script=ec2.CONFIG, image='python-ec2')
+    session = ec2.session(instance)
 
     # At the end, 
-    aws.kill(session)
+    ec2.kill(session['processes'])
+    instance.terminate()

@@ -25,6 +25,18 @@ def client():
     return _client
 
 class Path(object):
+    """Represents S3 as a pathlib object. For example:
+
+    `Path('alj.data/dirname/datafile.pkl').write_bytes(pickle.dumps(obj))`
+
+    will store an object to the bucket 'alj.data' under the key 'dirname/datafile.pkl'. If the bucket
+    doesn't exist, it'll be created. To read the data back,
+
+    `obj = pickle.loads(Path('alj.data/dirname/datafile.pkl').read_bytes())`
+
+    There is also a `write_multipart` function for streaming large files to S3. It works well with 
+    requests' streaming capabilities.
+    """
 
     def __init__(self, path):
         parts = path.split('/')
