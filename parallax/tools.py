@@ -53,7 +53,10 @@ def parallel(f, progress=True, **kwargs):
     with parallel(f) as g:
         ys = g.wait({x: g(x) for x in xs})
 
-    and f'll be called in parallel on each x, and the results collected in a dictionary
+    and f'll be called in parallel on each x, and the results collected in a dictionary.
+
+    A fantastic additonal feature is that if you pass `parallel(f, N=0)` , everything will be run on 
+    the host process, so you can `import pdb; pdb.pm()` any errors. 
     """
 
     with VariableExecutor(**kwargs) as pool:
